@@ -7,6 +7,7 @@
 # - Top-level files → push whole
 # - Rest → size-based push (<2GB folder, >2GB subfolder/file)
 # - Only ExtractedCSV uses Git LFS
+# - Exclude .git and .gitattributes from general loops
 # -------------------------------------------------
 
 BRANCH=$(git branch --show-current || echo "main")
@@ -51,7 +52,7 @@ push_folder() {
 
 push_files_individually() {
     local folder=$1
-    FILES=$(find "$folder" -type f)
+    FILES=$(find "$folder" -type f ! -path "*/.git/*")
     for FILE in $FILES; do
         echo "Processing file: $FILE"
         git reset
@@ -64,35 +65,24 @@ push_files_individually() {
 # -------------------------------
 # 1. Push LOCO folder whole
 # -------------------------------
-if [ -d "LOCO" ]; then
-    push_folder "LOCO"
-fi
+[ -d "LOCO" ] && push_folder "LOCO"
 
 # -------------------------------
 # 2. Push LOSO folder whole
 # -------------------------------
-if [ -d "LOSO" ]; then
-    push_folder "LOSO"
-fi
+[ -d "LOSO" ] && push_folder "LOSO"
 
 # -------------------------------
 # 3. Push top-level files (not folders) whole
 # -------------------------------
-TOP_FILES=$(find . -maxdepth 1 -type f)
-if [ ! -z "$TOP_FILES" ]; then
-    echo "Pushing top-level files"
-    git reset
-    git add $TOP_FILES
-    git commit -m "Add/update top-level files" --allow-empty --no-verify
-    git push origin $BRANCH --force
-fi
+TOP_FILES=$(find . -maxdepth 1 -type f ! -name ".gitattributes" ! -path "./.git/*")
+[ ! -z "$TOP_FILES" ] && git add $TOP_FILES && git commit -m "Add/update top-level files" --allow-empty --no-verify && git push origin $BRANCH --force
 
 # -------------------------------
 # 4. Apply size-based push for the rest
 # -------------------------------
-# Ignore LOCO, LOSO, top-level files, and ExtractedCSV handled via LFS
 IGNORE_LIST="LOCO LOSO $LFS_FOLDER"
-TOP_FOLDERS=$(find . -mindepth 1 -maxdepth 1 -type d)
+TOP_FOLDERS=$(find . -mindepth 1 -maxdepth 1 -type d ! -name ".git")
 
 for FOLDER in $TOP_FOLDERS; do
     BASENAME=$(basename "$FOLDER")
@@ -104,7 +94,7 @@ for FOLDER in $TOP_FOLDERS; do
         push_folder "$FOLDER"
     else
         # Folder too big → check subfolders
-        SUBFOLDERS=$(find "$FOLDER" -mindepth 1 -maxdepth 1 -type d)
+        SUBFOLDERS=$(find "$FOLDER" -mindepth 1 -maxdepth 1 -type d ! -name ".git")
         for SUB in $SUBFOLDERS; do
             SUBSIZE=$(folder_size "$SUB")
             if [ "$SUBSIZE" -le "$MAX_FOLDER_SIZE" ]; then
@@ -114,7 +104,7 @@ for FOLDER in $TOP_FOLDERS; do
             fi
         done
         # Also push loose files in top-level folder individually
-        FILES=$(find "$FOLDER" -maxdepth 1 -type f)
+        FILES=$(find "$FOLDER" -maxdepth 1 -type f ! -path "*/.git/*")
         for FILE in $FILES; do
             git reset
             git add "$FILE"
@@ -127,9 +117,7 @@ done
 # -------------------------------
 # 5. Push ExtractedCSV via LFS
 # -------------------------------
-if [ -d "$LFS_FOLDER" ]; then
-    push_folder "$LFS_FOLDER"
-fi
+[ -d "$LFS_FOLDER" ] && push_folder "$LFS_FOLDER"
 
 echo "----------------------------------------"
 echo "All files/folders pushed successfully. LOCO, LOSO, top-level files, and ExtractedCSV handled appropriately."
